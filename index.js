@@ -11,6 +11,11 @@ app.use(express.json());
 
 app.listen(PORT, () => { console.log(`Server started on port ${PORT}`) });
 
+let connectedUser = {
+  id: 0,
+  name: ""
+}
+
 async function createUser(name, email, password) {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -23,16 +28,39 @@ async function createUser(name, email, password) {
 async function checkIfUserAlreadyExists(email) {
   const [result] = await connection.query(`SELECT * FROM User WHERE email = ?`, [email]);
   return result.length > 0;
-
 }
 
-app.get("/", (req, res) => { res.send("Welcome to my team chat !"); });
+async function login(email, password) {
+  try {
+    let [result] = await connection.query(`SELECT * FROM User WHERE email = ?`, [email]);
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const user = result[0];
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (isMatch) {
+      connectedUser.id = user.id;
+      connectedUser.name = user.name;
+      console.log(connectedUser);
+    } else {
+      console.log("Invalid credentials");
+      return null;
+    }
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+app.get("/", (req, res) => { res.send("Welcome to my team chat !"); })
 
 app.post("/register", async (req, res) => {
   const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
-    return res.status(400).send("Invalid credentials");
+    return res.status(400).send("Missing mandatory fields.");
   }
 
   const userExists = await checkIfUserAlreadyExists(email);
@@ -47,4 +75,23 @@ app.post("/register", async (req, res) => {
   } catch (error) {
     console.log(error);
   }
-});
+})
+
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).send("Missing mandatory fields.");
+  }
+  const userExists = await checkIfUserAlreadyExists(email);
+
+  if (!userExists) {
+    return res.status(400).send("Account not found.");
+  }
+
+  try {
+    await login(email, password);
+    res.status(201).send(`Successfully logged in !`);
+  } catch (error) {
+    console.log(error);
+  }
+})
