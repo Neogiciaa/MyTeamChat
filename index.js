@@ -2,19 +2,21 @@ import connection from "./database-config.js";
 import express from 'express';
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
 const PORT = process.env.API_PORT;
+const JWT_SECRET = process.env.JWT_SECRET;
 const app = express();
 app.use(express.json());
-
-app.listen(PORT, () => { console.log(`Server started on port ${PORT}`) });
 
 let connectedUser = {
   id: 0,
   name: ""
 }
+
+app.listen(PORT, () => { console.log(`Server started on port ${PORT}`) });
 
 async function createUser(name, email, password) {
   try {
@@ -44,13 +46,29 @@ async function login(email, password) {
     if (isMatch) {
       connectedUser.id = user.id;
       connectedUser.name = user.name;
-      console.log(connectedUser);
+      return user;
     } else {
       console.log("Invalid credentials");
       return null;
     }
   } catch (error) {
     console.log(error);
+  }
+}
+
+function authentication(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(403).send('Not authorized');
+  }
+
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (error) {
+    return res.status(403).send(`${error.message}`);
   }
 }
 
@@ -90,8 +108,14 @@ app.post("/login", async (req, res) => {
 
   try {
     await login(email, password);
-    res.status(201).send(`Successfully logged in !`);
+    const token = jwt.sign({ id: connectedUser.id, name: connectedUser.name }, JWT_SECRET, { expiresIn: '7h' });
+    res.status(200).json({ token });
   } catch (error) {
     console.log(error);
   }
+})
+
+// Test route !
+app.get('/testjwt', authentication, (req, res) => {
+  res.send(`Hello, ${req.user.name}. This is a test protected route.`);
 })
