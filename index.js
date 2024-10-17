@@ -10,11 +10,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const app = express();
 app.use(express.json());
 
-let connectedUser = {
-  id: 0,
-  name: ""
-}
-
 app.listen(process.env.API_PORT, () => { console.log(`Server started on port ${process.env.DB_PORT}`) });
 
 async function createUser(name, email, password) {
@@ -71,25 +66,43 @@ function authentication(req, res, next) {
   }
 }
 
-async function createLobby (name, connectedUser) {
+async function createLobby (name, user) {
   try {
-    const [result] = await connection.query(`INSERT INTO Lobby (name, admin_id) VALUES (?, ?)`, [name, connectedUser.id]);
+    const [result] = await connection.query(`INSERT INTO Lobby (name, admin_id) VALUES (?, ?)`, [name, user.id]);
     const lobbyId = result.insertId;
-    await connection.query(`INSERT INTO User_Lobby (user_id, lobby_id) VALUES (?, ?)`, [connectedUser.id, lobbyId ]);
+    await connection.query(`INSERT INTO User_Lobby (user_id, lobby_id) VALUES (?, ?)`, [user.id, lobbyId ]);
   } catch (error) {
     console.log(error.message)
   }
 }
 
-async function addUserToLobby(lobbyName, userMail, connectedUser) {
+async function addUserToLobby(lobbyName, userMail, user) {
   const [result] = await connection.query(`SELECT * FROM User WHERE email = ?`, [userMail]);
   const newMemberId = result[0].id;
 
-  const [lobby] = await connection.query(`SELECT * FROM Lobby WHERE name = ? AND admin_id = ?`, [lobbyName, connectedUser.id]);
+  const [lobby] = await connection.query(`SELECT * FROM Lobby WHERE name = ? AND admin_id = ?`, [lobbyName, user.id]);
   const lobbyId = lobby[0].id;
 
   try {
     await connection.query(`INSERT INTO User_Lobby (user_id, lobby_id) VALUES (?, ?)`, [newMemberId, lobbyId]);
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+
+async function checkIfUserIsInLobby(user, lobbyId) {
+  try {
+    const [result] = await connection.query(`SELECT * FROM User_Lobby WHERE user_id = ? AND lobby_id = ?`, [user.id, lobbyId]);
+    return result.length !== 0;
+
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+
+async function createMessage(content, user, lobbyId) {
+  try {
+    await connection.query(`INSERT INTO Message (content, user_id, lobby_id) VALUES (?, ?, ?)`, [content, user.id, lobbyId]);
   } catch (error) {
     console.log(error.message);
   }
@@ -140,7 +153,7 @@ app.post("/login", async (req, res) => {
 
 app.post('/createLobby', authentication, async (req, res) => {
   const { name } = req.body;
-  await createLobby(name, connectedUser);
+  await createLobby(name, req.user);
   res.send(`Lobby ${name} successfully created !`);
 })
 
@@ -152,7 +165,25 @@ app.post('/addUserToLobby', authentication, async (req, res) => {
     return res.status(400).send("User does not not exists");
   }
 
-  await addUserToLobby(lobbyName, userMail, connectedUser);
+  await addUserToLobby(lobbyName, userMail, req.user);
   res.send(`User successfully added to ${lobbyName} !`);
 })
 
+app.post('/createMessage', authentication, async (req, res) => {
+  const { content, lobbyId } = req.body;
+  const userIsInLobby = await checkIfUserIsInLobby(req.user, lobbyId);
+
+  if (!userIsInLobby) {
+    res.status(400).send("Cannot send a message to a lobby where your not invited yet.");
+    return;
+  }
+
+  if (!content || !lobbyId) {
+    res.send(`Missing mandatory fields.`);
+  }
+
+  const [lobby] = await connection.query(`SELECT * FROM Lobby WHERE id = ?`, [lobbyId]);
+
+  await createMessage(content, req.user, lobby[0].id);
+  res.send(`Message: "${content}" successfully sent to ${lobby[0].name} !`);
+})
