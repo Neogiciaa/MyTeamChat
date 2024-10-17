@@ -81,12 +81,17 @@ async function createLobby (name, connectedUser) {
   }
 }
 
-async function addUserToLobby(lobbyName, userMail) {
-  const userExists = await checkIfUserAlreadyExists(userMail);
+async function addUserToLobby(lobbyName, userMail, connectedUser) {
+  const [result] = await connection.query(`SELECT * FROM User WHERE email = ?`, [userMail]);
+  const newMemberId = result[0].id;
 
-  if (!userExists) {
-    // TODO -> Envoyer une invitation a rejoindre l'application !
-    console.log("User ")
+  const [lobby] = await connection.query(`SELECT * FROM Lobby WHERE name = ? AND admin_id = ?`, [lobbyName, connectedUser.id]);
+  const lobbyId = lobby[0].id;
+
+  try {
+    await connection.query(`INSERT INTO User_Lobby (user_id, lobby_id) VALUES (?, ?)`, [newMemberId, lobbyId]);
+  } catch (error) {
+    console.log(error.message);
   }
 }
 
@@ -139,4 +144,15 @@ app.post('/createLobby', authentication, async (req, res) => {
   res.send(`Lobby ${name} successfully created !`);
 })
 
+app.post('/addUserToLobby', authentication, async (req, res) => {
+  const { lobbyName, userMail } = req.body;
+  const userExists = await checkIfUserAlreadyExists(userMail);
+
+  if (!userExists) {
+    return res.status(400).send("User does not not exists");
+  }
+
+  await addUserToLobby(lobbyName, userMail, connectedUser);
+  res.send(`User successfully added to ${lobbyName} !`);
+})
 
