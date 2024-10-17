@@ -6,7 +6,6 @@ import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
-const PORT = process.env.API_PORT;
 const JWT_SECRET = process.env.JWT_SECRET;
 const app = express();
 app.use(express.json());
@@ -16,7 +15,7 @@ let connectedUser = {
   name: ""
 }
 
-app.listen(PORT, () => { console.log(`Server started on port ${PORT}`) });
+app.listen(process.env.API_PORT, () => { console.log(`Server started on port ${PORT}`) });
 
 async function createUser(name, email, password) {
   try {
@@ -72,6 +71,16 @@ function authentication(req, res, next) {
   }
 }
 
+async function createLobby (name, connectedUser) {
+  try {
+    const [result] = await connection.query(`INSERT INTO Lobby (name, admin_id) VALUES (?, ?)`, [name, connectedUser.id]);
+    const lobbyId = result.insertId;
+    await connection.query(`INSERT INTO User_Lobby (user_id, lobby_id) VALUES (?, ?)`, [connectedUser.id, lobbyId ]);
+  } catch (error) {
+    console.log(error.message)
+  }
+}
+
 app.get("/", (req, res) => { res.send("Welcome to my team chat !"); })
 
 app.post("/register", async (req, res) => {
@@ -115,7 +124,11 @@ app.post("/login", async (req, res) => {
   }
 })
 
-// Test route !
-app.get('/testjwt', authentication, (req, res) => {
-  res.send(`Hello, ${req.user.name}. This is a test protected route.`);
+app.post('/createLobby', authentication, async (req, res) => {
+  const { name } = req.body;
+  await createLobby(name, connectedUser);
+  res.send(`Lobby ${name} successfully created !`);
 })
+
+
+
