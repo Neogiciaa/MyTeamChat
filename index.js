@@ -15,7 +15,7 @@ let connectedUser = {
   name: ""
 }
 
-app.listen(process.env.API_PORT, () => { console.log(`Server started on port ${PORT}`) });
+app.listen(process.env.API_PORT, () => { console.log(`Server started on port ${process.env.DB_PORT}`) });
 
 async function createUser(name, email, password) {
   try {
@@ -81,6 +81,15 @@ async function createLobby (name, connectedUser) {
   }
 }
 
+async function addUserToLobby(lobbyName, userMail) {
+  const userExists = await checkIfUserAlreadyExists(userMail);
+
+  if (!userExists) {
+    // TODO -> Envoyer une invitation a rejoindre l'application !
+    console.log("User ")
+  }
+}
+
 app.get("/", (req, res) => { res.send("Welcome to my team chat !"); })
 
 app.post("/register", async (req, res) => {
@@ -129,6 +138,5 @@ app.post('/createLobby', authentication, async (req, res) => {
   await createLobby(name, connectedUser);
   res.send(`Lobby ${name} successfully created !`);
 })
-
 
 
