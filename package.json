@@ -1,17 +1,13 @@
 {
   "name": "myteamchat",
   "version": "0.0.1",
-  "description": "My team chat duo project",
+  "description": "Becode training challenge - Chating api",
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js"
   },
-  "keywords": [
-    "mtc"
-  ],
-  "author": "SC & EG",
+  "author": "SC",
   "license": "MIT",
   "dependencies": {
     "bcrypt": "^5.1.1",
