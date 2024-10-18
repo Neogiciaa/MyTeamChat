@@ -98,6 +98,16 @@ async function checkIfUserIsInLobby(user, lobbyId) {
   }
 }
 
+async  function checkIfUserIsLobbyAdmin(user, lobbyId) {
+  try {
+    const [result] = await connection.query(`SELECT * FROM Lobby WHERE admin_id = ? AND id = ?`, [user.id, lobbyId]);
+    return result.length !== 0;
+
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+
 async function createMessage(content, user, lobbyId) {
   try {
     await connection.query(`INSERT INTO Message (content, user_id, lobby_id) VALUES (?, ?, ?)`, [content, user.id, lobbyId]);
@@ -117,6 +127,14 @@ async function updateMessage(lobbyId, messageId, newContent) {
 async function deleteMessage(lobbyId, messageId) {
   try {
     await connection.query(`DELETE FROM Message WHERE id = ? AND lobby_id = ?`, [messageId, lobbyId]);
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+
+async function removeUserFromLobby(userId, lobbyId) {
+  try {
+    await connection.query(`DELETE FROM User_Lobby WHERE user_id AND lobby_id = ?`, [userId, lobbyId]);
   } catch (error) {
     console.log(error.message);
   }
@@ -179,8 +197,12 @@ app.post('/addUserToLobby', authentication, async (req, res) => {
     return res.status(400).send("User does not not exists");
   }
 
-  await addUserToLobby(lobbyName, userMail, req.user);
-  res.send(`User successfully added to ${lobbyName} !`);
+  try {
+    await addUserToLobby(lobbyName, userMail, req.user);
+    res.send(`User successfully added to ${lobbyName} !`);
+  } catch (error) {
+    res.send(error.message);
+  }
 })
 
 app.post('/createMessage', authentication, async (req, res) => {
@@ -209,19 +231,25 @@ app.put('/updateMessage', authentication, async (req, res) => {
     return res.status(400).send("Missing mandatory fields.");
   }
 
-  const [result] = await connection.query(`SELECT * FROM Message WHERE id = ? AND user_id = ? AND lobby_id = ?`, [messageId, req.user.id, lobbyId]);
+  const isAdmin = await checkIfUserIsLobbyAdmin(req.user, lobbyId);
 
-  if (result.length === 0) {
-    return res.status(403).send("You are not authorized to edit this message or the message does not exist.");
+  const [message] = await connection.query(`SELECT * FROM Message WHERE id = ? AND lobby_id = ?`, [messageId, lobbyId]);
+
+  if (message.length === 0) {
+    return res.status(404).send("Message not found.");
+  }
+
+  if (message[0].user_id !== req.user.id && !isAdmin) {
+    return res.status(403).send("Not authorized.");
   }
 
   try {
     await updateMessage(lobbyId, messageId, newContent);
-    res.status(200).send("Message successfully updated.")
+    res.status(200).send("Message successfully updated.");
   } catch (error) {
     res.status(400).send(error.message);
   }
-})
+});
 
 app.delete('/deleteMessage', authentication, async (req, res) => {
   const { lobbyId, messageId } = req.body;
@@ -230,7 +258,8 @@ app.delete('/deleteMessage', authentication, async (req, res) => {
     return res.status(400).send("Missing mandatory fields.");
   }
 
-  const [result] = await connection.query(`SELECT * FROM Message WHERE id = ? AND user_id = ? AND lobby_id = ?`, [messageId, req.user.id, lobbyId]);
+  const [result] = await connection.query(`SELECT * FROM Message WHERE id = ? AND (user_id = ? OR lobby_id IN (SELECT lobby_id FROM Lobby WHERE admin_id = ?))`, [messageId, req.user.id, req.user.id]);
+
 
   if (result.length === 0) {
     return res.status(403).send("You are not authorized to delete this message or the message does not exist.");
@@ -241,5 +270,26 @@ app.delete('/deleteMessage', authentication, async (req, res) => {
     res.status(200).send("Message successfully deleted.")
   } catch (error) {
     res.status(400).send(error.message);
+  }
+})
+
+app.delete('/removeLobbyMember', authentication, async (req, res) => {
+  const { userId, lobbyId } = req.body;
+
+  if (!userId || !lobbyId) {
+    return res.status(400).send("Missing mandatory fields.");
+  }
+
+  const [result] = await connection.query(`SELECT * FROM Lobby WHERE user_id = ? OR admin_id = ? AND lobby_id = ?`, [userId, userId, lobbyId]);
+
+  if (result.length === 0) {
+    return res.send("Your not admin or tried to quit a lobby your not in.")
+  }
+
+  try {
+    await removeUserFromLobby(userId, lobbyId);
+    res.status(200).send("Lobby successfully quited.")
+  } catch (error) {
+    console.log(error.message);
   }
 })
