@@ -10,7 +10,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const app = express();
 app.use(express.json());
 
-app.listen(process.env.API_PORT, () => { console.log(`Server started on port ${process.env.DB_PORT}`) });
+app.listen(process.env.API_PORT, () => { console.log(`Server started on port ${process.env.API_PORT}`) });
 
 async function createUser(name, email, password) {
   try {
@@ -38,8 +38,6 @@ async function login(email, password) {
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (isMatch) {
-      connectedUser.id = user.id;
-      connectedUser.name = user.name;
       return user;
     } else {
       console.log("Invalid credentials");
@@ -108,6 +106,14 @@ async function createMessage(content, user, lobbyId) {
   }
 }
 
+async function updateMessage(lobbyId, messageId, newContent) {
+  try {
+    await connection.query(`UPDATE Message SET content = ? WHERE id = ? AND lobby_id = ?`, [newContent, messageId, lobbyId]);
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+
 app.get("/", (req, res) => { res.send("Welcome to my team chat !"); })
 
 app.post("/register", async (req, res) => {
@@ -136,18 +142,18 @@ app.post("/login", async (req, res) => {
   if (!email || !password) {
     return res.status(400).send("Missing mandatory fields.");
   }
-  const userExists = await checkIfUserAlreadyExists(email);
 
-  if (!userExists) {
-    return res.status(400).send("Account not found.");
+  const user = await login(email, password);
+  if (!user) {
+    return res.status(400).send("Invalid email or password.");
   }
 
   try {
-    await login(email, password);
-    const token = jwt.sign({ id: connectedUser.id, name: connectedUser.name }, JWT_SECRET, { expiresIn: '7h' });
+    const token = jwt.sign({ id: user.id, name: user.name }, JWT_SECRET, { expiresIn: '7h' });
     res.status(200).json({ token });
   } catch (error) {
     console.log(error);
+    res.status(500).send("An error occurred during login.");
   }
 })
 
@@ -179,11 +185,32 @@ app.post('/createMessage', authentication, async (req, res) => {
   }
 
   if (!content || !lobbyId) {
-    res.send(`Missing mandatory fields.`);
+    res.send("Missing mandatory fields.");
   }
 
   const [lobby] = await connection.query(`SELECT * FROM Lobby WHERE id = ?`, [lobbyId]);
 
   await createMessage(content, req.user, lobby[0].id);
-  res.send(`Message: "${content}" successfully sent to ${lobby[0].name} !`);
+  res.send(`Message: '${content}' successfully sent to ${lobby[0].name} !`);
+})
+
+app.put('/updateMessage', authentication, async (req, res) => {
+  const { messageId, newContent, lobbyId } = req.body;
+
+  if (!messageId || !newContent || !lobbyId) {
+    return res.status(400).send("Missing mandatory fields.");
+  }
+
+  const [result] = await connection.query(`SELECT * FROM Message WHERE id = ? AND user_id = ? AND lobby_id = ?`, [messageId, req.user.id, lobbyId]);
+
+  if (result.length === 0) {
+    return res.status(403).send("You are not authorized to edit this message or the message does not exist.");
+  }
+
+  try {
+    await updateMessage(lobbyId, messageId, newContent);
+    res.status(200).send("Message successfully updated.")
+  } catch (error) {
+    res.status(400).send(error.message);
+  }
 })
