@@ -114,6 +114,14 @@ async function updateMessage(lobbyId, messageId, newContent) {
   }
 }
 
+async function deleteMessage(lobbyId, messageId) {
+  try {
+    await connection.query(`DELETE FROM Message WHERE id = ? AND lobby_id = ?`, [messageId, lobbyId]);
+  } catch (error) {
+    console.log(error.message);
+  }
+}
+
 app.get("/", (req, res) => { res.send("Welcome to my team chat !"); })
 
 app.post("/register", async (req, res) => {
@@ -210,6 +218,27 @@ app.put('/updateMessage', authentication, async (req, res) => {
   try {
     await updateMessage(lobbyId, messageId, newContent);
     res.status(200).send("Message successfully updated.")
+  } catch (error) {
+    res.status(400).send(error.message);
+  }
+})
+
+app.delete('/deleteMessage', authentication, async (req, res) => {
+  const { lobbyId, messageId } = req.body;
+
+  if (!lobbyId || !messageId) {
+    return res.status(400).send("Missing mandatory fields.");
+  }
+
+  const [result] = await connection.query(`SELECT * FROM Message WHERE id = ? AND user_id = ? AND lobby_id = ?`, [messageId, req.user.id, lobbyId]);
+
+  if (result.length === 0) {
+    return res.status(403).send("You are not authorized to delete this message or the message does not exist.");
+  }
+
+  try {
+    await deleteMessage(lobbyId, messageId);
+    res.status(200).send("Message successfully deleted.")
   } catch (error) {
     res.status(400).send(error.message);
   }
